@@ -104,5 +104,5 @@ npm run dev
 --------------------------------------------
 
 ## 👥 Contributors
-- Frontend Developer: (정명성 / GitHub: Watchiiee)
+- Frontend Developer(이름/닉네임): 정명성 / Watchiiee
 
