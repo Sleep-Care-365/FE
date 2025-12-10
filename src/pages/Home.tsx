@@ -1,4 +1,3 @@
-import React from 'react';
 import { Link } from 'react-router-dom';
 import { UploadCloud, BarChart2, BrainCircuit, Calendar, ChevronRight } from 'lucide-react';
 import moonImg from '../assets/moon-icon.jpg';

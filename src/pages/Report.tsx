@@ -1,6 +1,5 @@
-import React from 'react';
 import { 
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine 
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
 } from 'recharts';
 import { Activity, BrainCircuit, Cpu, Layers, FileDigit } from 'lucide-react';
 import { MOCK_REPORT } from '../mocks/mockSleepData';

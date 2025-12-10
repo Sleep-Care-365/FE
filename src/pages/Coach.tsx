@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Bot, User, AlertCircle, CheckCircle2, ThermometerSun, BrainCircuit } from 'lucide-react';
+import { Send, Bot, User, AlertCircle, CheckCircle2, BrainCircuit } from 'lucide-react';
 import { COACHING_DATA, type ChatMessage } from '../mocks/mockCoachData';
 
 const Coach = () => {
