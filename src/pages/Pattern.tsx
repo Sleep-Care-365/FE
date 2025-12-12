@@ -1,123 +1,311 @@
-import { 
-  ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer 
-} from 'recharts';
-import { Calendar, TrendingUp, Activity, Target } from 'lucide-react';
-import { PATTERN_DATA } from '../mocks/mockPatternData';
+import React, { useEffect, useState, useRef } from "react";
+import {
+  ComposedChart,
+  Bar,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip as RechartsTooltip,
+  Legend,
+  ResponsiveContainer,
+} from "recharts";
+import { Calendar, TrendingUp, Activity, Target } from "lucide-react";
+import { getSleepHistory } from "../services/api";
+import type { SleepReportResponse } from "../types/sleep";
+
+// ✅ 날짜 포맷팅 함수
+const formatDate = (dateString: string) => {
+  const date = new Date(dateString);
+  if (isNaN(date.getTime())) return dateString;
+
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${month}-${day}`;
+};
 
 const Pattern = () => {
-  const data = PATTERN_DATA;
+  // 타입을 any로 열어두거나 인터페이스를 수정해야 하지만,
+  // 일단 any로 처리하여 sleep_score 접근을 허용합니다.
+  const [history, setHistory] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const [tooltipContent, setTooltipContent] = useState<{
+    date: string;
+    score: number;
+  } | null>(null);
+  const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
+  const heatmapRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const data = await getSleepHistory();
+        console.log("받아온 데이터 확인:", data); // ✅ 콘솔에서 데이터 구조 확인용
+
+        const sortedData = [...data].sort(
+          (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+        );
+        setHistory(sortedData);
+      } catch (error) {
+        console.error("데이터 로드 실패:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, []);
+
+  // ✅ [수정] 통계 계산 (안전장치 추가)
+  const calculateStats = () => {
+    if (history.length === 0)
+      return { avgSleep: 0, avgEff: 0, score: 0, count: 0 };
+
+    const totalSleep = history.reduce(
+      (sum, item) => sum + Number(item.summary?.totalSleepTime || 0),
+      0
+    );
+    const totalEff = history.reduce(
+      (sum, item) => sum + Number(item.summary?.sleepEfficiency || 0),
+      0
+    );
+
+    // 💥 핵심 수정: item.sleepScore가 없으면 item.sleep_score를 사용
+    const totalScore = history.reduce((sum, item) => {
+      const score = item.sleepScore ?? item.sleep_score ?? 0;
+      return sum + Number(score);
+    }, 0);
+
+    return {
+      avgSleep: Math.round(totalSleep / history.length),
+      avgEff: Math.round(totalEff / history.length),
+      score: Math.round(totalScore / history.length),
+      count: history.length,
+    };
+  };
+
+  const stats = calculateStats();
+
+  // ✅ [수정] 차트 데이터 가공 (안전장치 추가)
+  const chartData = history.map((item) => {
+    // 여기서도 sleepScore와 sleep_score 둘 다 체크
+    const safeScore = item.sleepScore ?? item.sleep_score ?? 0;
+
+    return {
+      date: formatDate(item.date),
+      totalSleep: parseFloat(
+        (Number(item.summary?.totalSleepTime || 0) / 60).toFixed(1)
+      ),
+      deepSleep: parseFloat(
+        (
+          (Number(item.summary?.totalSleepTime || 0) *
+            ((item.summary?.stages?.deep || 0) / 100)) /
+          60
+        ).toFixed(1)
+      ),
+      efficiency: item.summary?.sleepEfficiency || 0,
+      score: safeScore,
+    };
+  });
+
+  const handleMouseEnter = (
+    event: React.MouseEvent,
+    date: string,
+    score: number
+  ) => {
+    if (heatmapRef.current) {
+      const heatmapRect = heatmapRef.current.getBoundingClientRect();
+      const targetRect = (
+        event.currentTarget as HTMLDivElement
+      ).getBoundingClientRect();
+      const x = targetRect.left - heatmapRect.left + targetRect.width / 2;
+      const y = targetRect.top - heatmapRect.top - 10;
+      setTooltipPos({ x, y });
+      setTooltipContent({ date: formatDate(date), score });
+    }
+  };
+
+  if (loading)
+    return <div className="text-center py-20">데이터를 불러오는 중...</div>;
 
   return (
-    <div className="space-y-8 animate-fade-in-up pb-20">
-      
-      {/* 1. 헤더 */}
+    <div className="space-y-8 animate-fade-in-up pb-20 relative">
       <header>
         <h1 className="text-3xl font-bold text-slate-900 flex items-center gap-3">
           <Calendar className="w-8 h-8 text-indigo-600" />
           수면 패턴 분석
         </h1>
         <p className="text-slate-500 mt-2">
-          지난 30일간의 수면 데이터(EEG)를 분석하여 장기적인 패턴 변화를 추적합니다.
+          DB에 저장된 {stats.count}건의 데이터를 분석한 결과입니다.
         </p>
       </header>
 
-      {/* 2. 요약 통계 카드 */}
       <section className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <StatCard 
-          label="평균 수면 시간" 
-          value={data.stats.avgSleepTime} 
-          icon={<Activity className="w-5 h-5 text-blue-500" />} 
+        <StatCard
+          label="평균 수면 시간"
+          value={`${Math.floor(stats.avgSleep / 60)}시간 ${
+            stats.avgSleep % 60
+          }분`}
+          icon={<Activity className="w-5 h-5 text-blue-500" />}
         />
-        <StatCard 
-          label="평균 수면 효율" 
-          value={data.stats.avgEfficiency} 
-          icon={<TrendingUp className="w-5 h-5 text-green-500" />} 
+        <StatCard
+          label="평균 수면 효율"
+          value={`${stats.avgEff}%`}
+          icon={<TrendingUp className="w-5 h-5 text-green-500" />}
         />
-        <StatCard 
-          label="규칙성 점수" 
-          value={`${data.stats.consistencyScore}점`} 
-          icon={<Target className="w-5 h-5 text-purple-500" />} 
-          desc="매우 규칙적임"
+        <StatCard
+          label="평균 점수"
+          value={`${stats.score}점`}
+          icon={<Target className="w-5 h-5 text-purple-500" />}
+          desc={stats.score > 80 ? "매우 좋음" : "관리 필요"}
         />
-        <StatCard 
-          label="데이터 분석 일수" 
-          value={`${data.stats.totalAnalysis}일`} 
-          icon={<Calendar className="w-5 h-5 text-orange-500" />} 
+        <StatCard
+          label="누적 분석 리포트"
+          value={`${stats.count}건`}
+          icon={<Calendar className="w-5 h-5 text-orange-500" />}
         />
       </section>
 
-      {/* 3. 주간 트렌드 차트 (Composed Chart) */}
-      <section className="bg-white p-6 md:p-8 rounded-3xl border border-slate-200 shadow-sm">
-        <h2 className="text-xl font-bold text-slate-900 mb-6">주간 수면 아키텍처 변화</h2>
-        <div className="h-[400px] w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <ComposedChart data={data.weeklyTrend} margin={{ top: 20, right: 20, bottom: 20, left: 0 }}>
-              <CartesianGrid stroke="#f1f5f9" vertical={false} />
-              <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{fill: '#64748b'}} />
-              {/* 왼쪽 Y축: 시간 */}
-              <YAxis yAxisId="left" label={{ value: '시간 (h)', angle: -90, position: 'insideLeft' }} axisLine={false} tickLine={false} />
-              {/* 오른쪽 Y축: 점수/효율 */}
-              <YAxis yAxisId="right" orientation="right" domain={[0, 100]} axisLine={false} tickLine={false} />
-              
-              <Tooltip content={<CustomTooltip />} />
-              <Legend />
-
-              {/* 총 수면 시간 (막대) */}
-              <Bar yAxisId="left" dataKey="totalSleep" name="총 수면 시간" barSize={20} fill="#cbd5e1" radius={[4, 4, 0, 0]} />
-              {/* 깊은 잠 (막대 중첩 - 실제로는 별도 표시) */}
-              <Bar yAxisId="left" dataKey="deepSleep" name="깊은 잠 (N3+N4)" barSize={20} fill="#4f46e5" radius={[4, 4, 0, 0]} />
-              
-              {/* 효율 및 점수 (선) */}
-              <Line yAxisId="right" type="monotone" dataKey="efficiency" name="수면 효율 (%)" stroke="#10b981" strokeWidth={2} dot={{r: 4}} />
-            </ComposedChart>
-          </ResponsiveContainer>
+      {history.length > 0 ? (
+        <section className="bg-white p-6 md:p-8 rounded-3xl border border-slate-200 shadow-sm">
+          <h2 className="text-xl font-bold text-slate-900 mb-6">
+            최근 수면 변화 추이
+          </h2>
+          <div className="h-[400px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart
+                data={chartData}
+                margin={{ top: 20, right: 20, bottom: 20, left: 0 }}
+              >
+                <CartesianGrid stroke="#f1f5f9" vertical={false} />
+                <XAxis
+                  dataKey="date"
+                  axisLine={false}
+                  tickLine={false}
+                  tick={{ fill: "#64748b" }}
+                />
+                <YAxis
+                  yAxisId="left"
+                  label={{
+                    value: "시간 (h)",
+                    angle: -90,
+                    position: "insideLeft",
+                  }}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <YAxis
+                  yAxisId="right"
+                  orientation="right"
+                  domain={[0, 100]}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <RechartsTooltip content={<CustomRechartsTooltip />} />
+                <Legend />
+                <Bar
+                  yAxisId="left"
+                  dataKey="totalSleep"
+                  name="총 수면 시간"
+                  barSize={20}
+                  fill="#cbd5e1"
+                  radius={[4, 4, 0, 0]}
+                />
+                <Bar
+                  yAxisId="left"
+                  dataKey="deepSleep"
+                  name="깊은 잠 (N3+N4)"
+                  barSize={20}
+                  fill="#4f46e5"
+                  radius={[4, 4, 0, 0]}
+                />
+                <Line
+                  yAxisId="right"
+                  type="monotone"
+                  dataKey="efficiency"
+                  name="수면 효율 (%)"
+                  stroke="#10b981"
+                  strokeWidth={2}
+                  dot={{ r: 4 }}
+                />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+        </section>
+      ) : (
+        <div className="p-10 text-center bg-slate-50 rounded-3xl border border-dashed border-slate-300">
+          <p className="text-slate-500">아직 저장된 수면 기록이 없습니다.</p>
         </div>
-      </section>
+      )}
 
-      {/* 4. 월간 히트맵 (GitHub Style) */}
-      <section className="bg-white p-6 md:p-8 rounded-3xl border border-slate-200 shadow-sm">
-        <div className="flex justify-between items-end mb-6">
-          <h2 className="text-xl font-bold text-slate-900">월간 수면 일관성 (Consistency)</h2>
-          <div className="flex gap-2 text-xs text-slate-500">
-            <span className="flex items-center gap-1"><div className="w-3 h-3 rounded-sm bg-slate-100"></div>No Data</span>
-            <span className="flex items-center gap-1"><div className="w-3 h-3 rounded-sm bg-indigo-200"></div>Bad</span>
-            <span className="flex items-center gap-1"><div className="w-3 h-3 rounded-sm bg-indigo-400"></div>Good</span>
-            <span className="flex items-center gap-1"><div className="w-3 h-3 rounded-sm bg-indigo-600"></div>Excellent</span>
+      <section
+        className="bg-white p-6 md:p-8 rounded-3xl border border-slate-200 shadow-sm relative"
+        ref={heatmapRef}
+      >
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+          <h2 className="text-xl font-bold text-slate-900">
+            월간 수면 일관성 (Consistency)
+          </h2>
+          <div className="flex items-center gap-3 text-xs text-slate-500">
+            <div className="flex items-center gap-1">
+              <div className="w-3 h-3 rounded bg-slate-100 border border-slate-200"></div>{" "}
+              No Data
+            </div>
+            <div className="flex items-center gap-1">
+              <div className="w-3 h-3 rounded bg-indigo-200"></div> Bad
+            </div>
+            <div className="flex items-center gap-1">
+              <div className="w-3 h-3 rounded bg-indigo-400"></div> Good
+            </div>
+            <div className="flex items-center gap-1">
+              <div className="w-3 h-3 rounded bg-indigo-600"></div> Excellent
+            </div>
           </div>
         </div>
 
-        {/* 그리드 캘린더 */}
-        <div className="grid grid-cols-7 gap-2 md:gap-3">
-          {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
-            <div key={day} className="text-center text-xs font-semibold text-slate-400 mb-2">{day}</div>
-          ))}
-          
-          {data.monthlyLogs.map((log, idx) => (
-            <div 
-              key={idx} 
-              className={`
-                aspect-square rounded-xl flex items-center justify-center text-xs font-bold transition-all hover:scale-110 cursor-pointer relative group
-                ${log.score >= 90 ? 'bg-indigo-600 text-white shadow-indigo-200 shadow-lg' : 
-                  log.score >= 75 ? 'bg-indigo-400 text-white' : 
-                  'bg-indigo-100 text-indigo-800'}
-              `}
-            >
-              {idx + 1}
-              
-              {/* 호버 시 툴팁 */}
-              <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-[10px] py-1 px-2 rounded opacity-0 group-hover:opacity-100 whitespace-nowrap pointer-events-none z-10">
-                {log.date}: {log.score}점
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
+        <div className="grid grid-cols-4 md:grid-cols-7 gap-3">
+          {history.map((log, idx) => {
+            // 💥 핵심 수정: 여기서도 안전하게 값 가져오기
+            const score = Number(log.sleepScore ?? log.sleep_score ?? 0);
 
+            let colorClass = "bg-indigo-100 text-indigo-800";
+            if (score >= 90) colorClass = "bg-indigo-600 text-white";
+            else if (score >= 70) colorClass = "bg-indigo-400 text-white";
+            else if (score > 0) colorClass = "bg-indigo-200 text-indigo-900";
+
+            return (
+              <div
+                key={idx}
+                onMouseEnter={(e) => handleMouseEnter(e, log.date, score)}
+                onMouseLeave={() => setTooltipContent(null)}
+                className={`
+                  aspect-square rounded-xl flex flex-col items-center justify-center transition-all hover:scale-105 cursor-pointer relative shadow-sm
+                  ${colorClass}
+                `}
+              >
+                <span className="text-[10px] opacity-80 uppercase mb-1">
+                  {formatDate(log.date)}
+                </span>
+                <span className="text-xl font-bold">{score}</span>
+              </div>
+            );
+          })}
+        </div>
+
+        {tooltipContent && (
+          <div
+            className="absolute z-50 bg-slate-900 text-white text-xs py-1 px-3 rounded-md shadow-lg pointer-events-none transform -translate-x-1/2 -translate-y-full transition-opacity"
+            style={{ top: tooltipPos.y, left: tooltipPos.x }}
+          >
+            <span className="font-bold">{tooltipContent.date}</span> :{" "}
+            {tooltipContent.score}점
+          </div>
+        )}
+      </section>
     </div>
   );
 };
 
-// 통계 카드 컴포넌트
 const StatCard = ({ label, value, icon, desc }: any) => (
   <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:-translate-y-1 transition duration-300">
     <div className="flex justify-between items-start mb-2">
@@ -129,8 +317,7 @@ const StatCard = ({ label, value, icon, desc }: any) => (
   </div>
 );
 
-// 차트 커스텀 툴팁
-const CustomTooltip = ({ active, payload, label }: any) => {
+const CustomRechartsTooltip = ({ active, payload, label }: any) => {
   if (active && payload && payload.length) {
     return (
       <div className="bg-slate-800 text-white p-3 rounded-lg shadow-xl text-xs">
@@ -138,7 +325,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
         {payload.map((entry: any, index: number) => (
           <p key={index} className="mb-1" style={{ color: entry.color }}>
             {entry.name}: {entry.value}
-            {entry.name.includes('효율') ? '%' : 'h'}
+            {entry.name.includes("효율") ? "%" : "h"}
           </p>
         ))}
       </div>

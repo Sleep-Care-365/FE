@@ -5,6 +5,7 @@ export type SleepStage = "W" | "N1" | "N2" | "N3" | "N4" | "R";
 export interface SleepReport {
   id: string;
   date: string;
+  sleepScore: number; // 👈 [추가] 이 부분이 빠져서 에러가 났습니다!
 
   // 분석 정보
   analysisInfo: {
@@ -38,4 +39,5 @@ export interface SleepReport {
   aiCoaching: string;
 }
 
+// 별칭 (API 응답 타입으로 사용)
 export type SleepReportResponse = SleepReport;

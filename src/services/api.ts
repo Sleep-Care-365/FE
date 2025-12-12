@@ -31,3 +31,8 @@ export const uploadSleepFile = async (
 
   return response.data;
 };
+
+export const getSleepHistory = async (): Promise<SleepReportResponse[]> => {
+  const response = await api.get<SleepReportResponse[]>("/analysis/history");
+  return response.data;
+};
