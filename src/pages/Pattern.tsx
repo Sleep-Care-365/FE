@@ -12,7 +12,7 @@ import {
 } from "recharts";
 import { Calendar, TrendingUp, Activity, Target } from "lucide-react";
 import { getSleepHistory } from "../services/api";
-import type { SleepReportResponse } from "../types/sleep";
+// import type { SleepReportResponse } from "../types/sleep";
 
 // ✅ 날짜 포맷팅 함수
 const formatDate = (dateString: string) => {
@@ -44,7 +44,7 @@ const Pattern = () => {
         console.log("받아온 데이터 확인:", data); // ✅ 콘솔에서 데이터 구조 확인용
 
         const sortedData = [...data].sort(
-          (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+          (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
         );
         setHistory(sortedData);
       } catch (error) {
@@ -63,11 +63,11 @@ const Pattern = () => {
 
     const totalSleep = history.reduce(
       (sum, item) => sum + Number(item.summary?.totalSleepTime || 0),
-      0
+      0,
     );
     const totalEff = history.reduce(
       (sum, item) => sum + Number(item.summary?.sleepEfficiency || 0),
-      0
+      0,
     );
 
     // 💥 핵심 수정: item.sleepScore가 없으면 item.sleep_score를 사용
@@ -94,14 +94,14 @@ const Pattern = () => {
     return {
       date: formatDate(item.date),
       totalSleep: parseFloat(
-        (Number(item.summary?.totalSleepTime || 0) / 60).toFixed(1)
+        (Number(item.summary?.totalSleepTime || 0) / 60).toFixed(1),
       ),
       deepSleep: parseFloat(
         (
           (Number(item.summary?.totalSleepTime || 0) *
             ((item.summary?.stages?.deep || 0) / 100)) /
           60
-        ).toFixed(1)
+        ).toFixed(1),
       ),
       efficiency: item.summary?.sleepEfficiency || 0,
       score: safeScore,
@@ -111,7 +111,7 @@ const Pattern = () => {
   const handleMouseEnter = (
     event: React.MouseEvent,
     date: string,
-    score: number
+    score: number,
   ) => {
     if (heatmapRef.current) {
       const heatmapRect = heatmapRef.current.getBoundingClientRect();
